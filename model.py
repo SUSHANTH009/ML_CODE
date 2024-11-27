@@ -73,8 +73,6 @@ def preprocess_image(image):
     hr_image = tf.image.crop_to_bounding_box(hr_image, 0, 0, hr_size[0], hr_size[1])
     return tf.expand_dims(hr_image, 0)
 
-
-
 def process_videos_from_queue():
     while True:
 
