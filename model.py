@@ -129,7 +129,7 @@ def process_videos_from_queue():
             cap.release()
 
             if pothole_detected:
-                url = "http://localhost:8080/api/location/"
+                url = "https://potholebackend.onrender.com/api/location/"
                 data = {
                     "latitude": latitude,
                     "longitude": longitude

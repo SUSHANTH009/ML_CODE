@@ -108,7 +108,6 @@ scipy==1.14.0
 seaborn==0.13.2
 soupsieve==2.5
 sympy==1.13.2
-TA-Lib==0.4.31
 tensorboard==2.17.1
 tensorboard-data-server==0.7.2
 tensorflow==2.17.0
