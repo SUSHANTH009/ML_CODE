@@ -10,31 +10,39 @@ import numpy as np
 from ultralytics import YOLO
 import requests
 import cv2
-import io
+import tempfile
 
-
+# Initialize Flask app
 app = Flask(__name__)
 CORS(app)
 
+# Global queue for video processing
 data_queue = queue.Queue()
 
+# Paths to models
 ESRGAN_MODEL_PATH = './esrgan_model'
 YOLO_MODEL_PATH = 'best.pt'
 
+# Load models
 yolo_model = YOLO(YOLO_MODEL_PATH)
 esrgan_model = tf.saved_model.load(ESRGAN_MODEL_PATH)
 
-logging.basicConfig(filename='pipeline.log', level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
+# Configure logging
+logging.basicConfig(
+    filename='pipeline.log',
+    level=logging.DEBUG,  # Use DEBUG level to capture all events
+    format='%(asctime)s - %(levelname)s - %(message)s'
+)
 
 @app.route('/upload_blob', methods=['POST'])
 def upload_blob():
     """
     Endpoint to handle blob file upload and save each frame with a unique filename in the queue.
     """
-    app.logger.debug("Received POST request on /upload_blob")
+    logging.debug("Received POST request on /upload_blob")
 
     if 'video' not in request.files:
-        app.logger.error("No video file in the request")
+        logging.error("No video file in the request")
         return jsonify({"error": "No video file provided"}), 400
 
     video_file = request.files['video']
@@ -42,7 +50,7 @@ def upload_blob():
     longitude = request.form.get('longitude')
 
     if not latitude or not longitude:
-        app.logger.error("Missing latitude or longitude in the request")
+        logging.error("Missing latitude or longitude in the request")
         return jsonify({"error": "Missing latitude or longitude"}), 400
 
     timestamp = int(time.time() * 1000)
@@ -57,22 +65,28 @@ def upload_blob():
         "timestamp": timestamp
     }
 
-
+    # Add video and metadata to the queue
     data_queue.put({"video": video_data, "metadata": metadata})
-    app.logger.info(f"Data added to queue: filename={filename}, metadata={metadata}")
+    logging.info(f"Data added to queue: filename={filename}, metadata={metadata}")
 
-    return jsonify({"message": "Frame and metadata added to queue successfully"}), 200
+    return jsonify({"message": "Video and metadata added to queue successfully"}), 200
 
 
 def preprocess_image(image):
+    """
+    Preprocess an image for ESRGAN super-resolution.
+    """
     hr_image = tf.convert_to_tensor(image, dtype=tf.float32)
     hr_size = (tf.convert_to_tensor(hr_image.shape[:-1]) // 4) * 4
     hr_image = tf.image.crop_to_bounding_box(hr_image, 0, 0, hr_size[0], hr_size[1])
     return tf.expand_dims(hr_image, 0)
 
-def process_videos_from_queue():
-    while True:
 
+def process_videos_from_queue():
+    """
+    Continuously process videos from the queue.
+    """
+    while True:
         if data_queue.empty():
             continue
 
@@ -84,75 +98,87 @@ def process_videos_from_queue():
         filename = metadata['filename']
 
         try:
-            video_stream = io.BytesIO(video_data)
-            video_stream.seek(0)
+            # Save raw video bytes to a temporary file
+            with tempfile.NamedTemporaryFile(delete=True, suffix=".webm") as temp_video:
+                temp_video.write(video_data)
+                temp_video.flush()  # Ensure all data is written to disk
 
-            cap = cv2.VideoCapture(video_stream.read())
-            pothole_detected = False
+                # Open video file using OpenCV
+                cap = cv2.VideoCapture(temp_video.name)
+                pothole_detected = False
 
-            while cap.isOpened():
-                ret, frame = cap.read()
-                if not ret:
-                    break
+                while cap.isOpened():
+                    ret, frame = cap.read()
+                    if not ret:
+                        break
 
+                    try:
+                        # Preprocess frame and run through ESRGAN
+                        lr_image = preprocess_image(frame)
+                        sr_image = esrgan_model(lr_image)
+                        sr_image = tf.squeeze(sr_image).numpy().astype(np.uint8)
+                        logging.debug(f"Frame enhanced from video {filename}.")
 
-                try:
-                    lr_image = preprocess_image(frame)
-                    sr_image = esrgan_model(lr_image)
-                    sr_image = tf.squeeze(sr_image).numpy().astype(np.uint8)
-                    logging.info(f"Frame enhanced from video {filename}.")
+                    except Exception as e:
+                        logging.error(f"Error enhancing frame from video {filename}: {str(e)}")
+                        continue
 
-                except Exception as e:
-                    logging.error(f"Error enhancing frame from video {filename}: {str(e)}")
-                    continue
+                    try:
+                        # Run YOLO detection on the enhanced frame
+                        results = yolo_model.predict(sr_image)
+                        for r in results:
+                            if len(r.boxes) > 0:
+                                pothole_detected = True
+                                break
 
+                        if pothole_detected:
+                            break  # Stop processing more frames if pothole detected
 
-                try:
-                    results = yolo_model.predict(sr_image)
+                    except Exception as e:
+                        logging.error(f"Error during YOLO detection on video {filename}: {str(e)}")
 
-                    for r in results:
-                        if len(r.boxes) > 0:
-                            pothole_detected = True
-                            break
+                cap.release()
 
-                    if pothole_detected:
-                        break  
+                # Handle detected pothole
+                if pothole_detected:
+                    url = "https://potholebackend.onrender.com/api/location/"
+                    data = {
+                        "latitude": latitude,
+                        "longitude": longitude
+                    }
+                    try:
+                        response = requests.post(url, json=data)
+                        if response.status_code == 200:
+                            logging.info(f"Pothole detected in video {filename}, GPS location sent successfully.")
+                        else:
+                            logging.error(f"Failed to send GPS location for video {filename}. Response: {response.text}")
+                    except Exception as e:
+                        logging.error(f"Error sending GPS location for video {filename}: {str(e)}")
 
-                except Exception as e:
-                    logging.error(f"Error during YOLO detection on video {filename}: {str(e)}")
-
-            cap.release()
-
-            if pothole_detected:
-                url = "https://potholebackend.onrender.com/api/location/"
-                data = {
-                    "latitude": latitude,
-                    "longitude": longitude
-                }
-                response = requests.post(url, json=data)
-                if response.status_code == 200:
-                    logging.info(f"Pothole detected in video {filename}, GPS location sent successfully.")
                 else:
-                    logging.error(f"Failed to send GPS location for video {filename}. Response: {response.text}")
-
-            else:
-                logging.info(f"No pothole detected in video {filename}. Skipping GPS notification.")
+                    logging.info(f"No pothole detected in video {filename}. Skipping GPS notification.")
 
         except Exception as e:
             logging.error(f"Error processing video {filename}: {str(e)}")
 
+
 def start_flask():
-    app.run(debug=True, use_reloader=False)
+    """
+    Start the Flask server.
+    """
+    app.run(host="0.0.0.0", port=5000,debug=True, use_reloader=False)
 
 
 def start_processing():
+    """
+    Start the video processing thread.
+    """
     processing_thread = threading.Thread(target=process_videos_from_queue, daemon=True)
     processing_thread.start()
 
+
 if __name__ == '__main__':
     threading.Thread(target=start_flask, daemon=True).start()
-
     start_processing()
-
     while True:
         time.sleep(1)
