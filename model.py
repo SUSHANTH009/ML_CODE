@@ -12,25 +12,25 @@ import requests
 import cv2
 import tempfile
 
-# Initialize Flask app
+
 app = Flask(__name__)
 CORS(app)
 
-# Global queue for video processing
+
 data_queue = queue.Queue()
 
-# Paths to models
+
 ESRGAN_MODEL_PATH = './esrgan_model'
 YOLO_MODEL_PATH = 'best.pt'
 
-# Load models
+
 yolo_model = YOLO(YOLO_MODEL_PATH)
 esrgan_model = tf.saved_model.load(ESRGAN_MODEL_PATH)
 
-# Configure logging
+
 logging.basicConfig(
     filename='pipeline.log',
-    level=logging.DEBUG,  # Use DEBUG level to capture all events
+    level=logging.DEBUG, 
     format='%(asctime)s - %(levelname)s - %(message)s'
 )
 
@@ -65,7 +65,7 @@ def upload_blob():
         "timestamp": timestamp
     }
 
-    # Add video and metadata to the queue
+
     data_queue.put({"video": video_data, "metadata": metadata})
     logging.info(f"Data added to queue: filename={filename}, metadata={metadata}")
 
@@ -98,12 +98,12 @@ def process_videos_from_queue():
         filename = metadata['filename']
 
         try:
-            # Save raw video bytes to a temporary file
+
             with tempfile.NamedTemporaryFile(delete=True, suffix=".webm") as temp_video:
                 temp_video.write(video_data)
-                temp_video.flush()  # Ensure all data is written to disk
+                temp_video.flush() 
 
-                # Open video file using OpenCV
+
                 cap = cv2.VideoCapture(temp_video.name)
                 pothole_detected = False
 
@@ -166,7 +166,7 @@ def start_flask():
     """
     Start the Flask server.
     """
-    app.run(host="0.0.0.0", port=5000,debug=True, use_reloader=False)
+    app.run(debug=True, use_reloader=False)
 
 
 def start_processing():
