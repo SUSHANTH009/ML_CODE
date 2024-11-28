@@ -12,7 +12,6 @@ import requests
 import cv2
 import tempfile
 
-
 app = Flask(__name__)
 CORS(app)
 
@@ -113,7 +112,7 @@ def process_videos_from_queue():
                         break
 
                     try:
-                        # Preprocess frame and run through ESRGAN
+
                         lr_image = preprocess_image(frame)
                         sr_image = esrgan_model(lr_image)
                         sr_image = tf.squeeze(sr_image).numpy().astype(np.uint8)
@@ -124,7 +123,7 @@ def process_videos_from_queue():
                         continue
 
                     try:
-                        # Run YOLO detection on the enhanced frame
+
                         results = yolo_model.predict(sr_image)
                         for r in results:
                             if len(r.boxes) > 0:
@@ -132,14 +131,13 @@ def process_videos_from_queue():
                                 break
 
                         if pothole_detected:
-                            break  # Stop processing more frames if pothole detected
+                            break 
 
                     except Exception as e:
                         logging.error(f"Error during YOLO detection on video {filename}: {str(e)}")
 
                 cap.release()
 
-                # Handle detected pothole
                 if pothole_detected:
                     url = "https://potholebackend.onrender.com/api/location/"
                     data = {
@@ -166,7 +164,7 @@ def start_flask():
     """
     Start the Flask server.
     """
-    app.run(debug=True, use_reloader=False)
+    app.run(host="0.0.0.0", port=5000)
 
 
 def start_processing():
@@ -175,7 +173,6 @@ def start_processing():
     """
     processing_thread = threading.Thread(target=process_videos_from_queue, daemon=True)
     processing_thread.start()
-
 
 if __name__ == '__main__':
     threading.Thread(target=start_flask, daemon=True).start()
