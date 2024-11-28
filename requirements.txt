@@ -131,3 +131,4 @@ xyzservices==2024.6.0
 yarg==0.1.9
 yarl==1.9.4
 gunicorn==20.1.0
+tensorflow-cpu

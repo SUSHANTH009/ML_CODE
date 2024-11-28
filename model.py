@@ -16,13 +16,10 @@ import io
 app = Flask(__name__)
 CORS(app)
 
-
 data_queue = queue.Queue()
-
 
 ESRGAN_MODEL_PATH = './esrgan_model'
 YOLO_MODEL_PATH = 'best.pt'
-
 
 yolo_model = YOLO(YOLO_MODEL_PATH)
 esrgan_model = tf.saved_model.load(ESRGAN_MODEL_PATH)
@@ -144,17 +141,13 @@ def process_videos_from_queue():
         except Exception as e:
             logging.error(f"Error processing video {filename}: {str(e)}")
 
-
-
 def start_flask():
     app.run(debug=True, use_reloader=False)
-
 
 
 def start_processing():
     processing_thread = threading.Thread(target=process_videos_from_queue, daemon=True)
     processing_thread.start()
-
 
 if __name__ == '__main__':
     threading.Thread(target=start_flask, daemon=True).start()
